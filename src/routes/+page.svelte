@@ -1,25 +1,43 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import LatencyChart from '$lib/components/LatencyChart.svelte';
 	import UptimeBars from '$lib/components/UptimeBars.svelte';
 	import Visual from '$lib/components/Visual.svelte';
 	import { subscribeToUpdates } from '$lib/realtime-client';
 	import { INCIDENT_SEVERITIES, INCIDENT_STATUSES, STATUSES } from '$lib/status';
+	import type { Overview } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	let live = $state(false);
 
+	const queryClient = useQueryClient();
+	const overviewQuery = createQuery(() => ({
+		queryKey: ['overview'],
+		queryFn: async (): Promise<Overview> => {
+			const response = await fetch('/api/overview');
+			if (!response.ok) throw new Error(`overview fetch failed: ${response.status}`);
+			return response.json();
+		},
+		initialData: data.overview,
+		// the WebSocket push is the primary refresh signal; poll only without it
+		refetchInterval: live ? false : 30_000,
+		refetchOnWindowFocus: true
+	}));
+
 	$effect(() => {
-		return subscribeToUpdates(() => {
-			live = true;
-			invalidateAll();
-		});
+		return subscribeToUpdates(
+			() => queryClient.invalidateQueries({ queryKey: ['overview'] }),
+			(isLive) => (live = isLive)
+		);
 	});
 
+	const overview = $derived(overviewQuery.data ?? data.overview);
+
 	const allOperational = $derived(
-		data.services.every((s) => s.status === 'operational') && data.incidents.active.length === 0
+		overview.services.every((s) => s.status === 'operational') &&
+			overview.incidents.active.length === 0
 	);
 
 	function fmt(iso: string) {
@@ -44,9 +62,9 @@
 	</span>
 </section>
 
-{#if data.incidents.active.length > 0}
+{#if overview.incidents.active.length > 0}
 	<section class="incidents">
-		{#each data.incidents.active as incident (incident.id)}
+		{#each overview.incidents.active as incident (incident.id)}
 			<article class="incident" class:maint={incident.type === 'maintenance'}>
 				<header>
 					<h2><a href="/incident/{incident.id}">{incident.title}</a></h2>
@@ -75,10 +93,10 @@
 	</section>
 {/if}
 
-{#if data.incidents.upcoming.length > 0}
+{#if overview.incidents.upcoming.length > 0}
 	<section class="incidents">
 		<h2 class="section-title">Scheduled maintenance</h2>
-		{#each data.incidents.upcoming as incident (incident.id)}
+		{#each overview.incidents.upcoming as incident (incident.id)}
 			<article class="incident maint">
 				<header>
 					<h2><a href="/incident/{incident.id}">{incident.title}</a></h2>
@@ -100,8 +118,8 @@
 {/if}
 
 <section class="services">
-	{#each data.services as service (service.id)}
-		{@const m = data.metrics[service.id]}
+	{#each overview.services as service (service.id)}
+		{@const m = overview.metrics[service.id]}
 		<div class="service">
 			<div class="service-head">
 				<div class="service-id">
@@ -133,11 +151,11 @@
 	{/each}
 </section>
 
-{#if data.incidents.resolved.length > 0}
+{#if overview.incidents.resolved.length > 0}
 	<section>
 		<h2 class="section-title">Past incidents</h2>
 		<ul class="past">
-			{#each data.incidents.resolved as incident (incident.id)}
+			{#each overview.incidents.resolved as incident (incident.id)}
 				<li>
 					<span class="chip small" style:--c={INCIDENT_SEVERITIES[incident.severity].color}>
 						{INCIDENT_SEVERITIES[incident.severity].label}
@@ -151,11 +169,11 @@
 	</section>
 {/if}
 
-{#if data.events.length > 0}
+{#if overview.events.length > 0}
 	<section>
 		<h2 class="section-title">Recent updates</h2>
 		<ul class="events">
-			{#each data.events as event (event.id)}
+			{#each overview.events as event (event.id)}
 				<li>
 					<span class="dot" style:--c={STATUSES[event.status].color}></span>
 					<div>

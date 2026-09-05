@@ -380,10 +380,12 @@ export async function serviceMetrics(db: D1Database): Promise<Map<number, Servic
 			 WHERE day >= date('now', '-${UPTIME_DAYS - 1} days')`
 		),
 		db.prepare(
-			`SELECT serviceId, date('now') AS day, COUNT(*) AS checks, COUNT(*) - SUM(ok) AS failures
+			// today + yesterday from raw: covers today's partial day and the
+			// window between midnight and the daily housekeeping rollup
+			`SELECT serviceId, date(checkedAt) AS day, COUNT(*) AS checks, COUNT(*) - SUM(ok) AS failures
 			 FROM uptime_check
-			 WHERE date(checkedAt) = date('now')
-			 GROUP BY serviceId`
+			 WHERE date(checkedAt) >= date('now', '-1 day')
+			 GROUP BY serviceId, date(checkedAt)`
 		),
 		db.prepare(
 			`SELECT serviceId, 100.0 * AVG(ok) AS pct
@@ -392,8 +394,11 @@ export async function serviceMetrics(db: D1Database): Promise<Map<number, Servic
 			 GROUP BY serviceId`
 		),
 		db.prepare(
-			`SELECT serviceId, SUM(checks) AS checks, SUM(failures) AS failures
-			 FROM uptime_daily GROUP BY serviceId`
+			`SELECT serviceId, SUM(checks) AS checks, SUM(failures) AS failures FROM (
+				SELECT serviceId, checks, failures FROM uptime_daily
+				UNION ALL
+				SELECT serviceId, checks, failures FROM uptime_weekly
+			 ) GROUP BY serviceId`
 		)
 	]);
 
@@ -415,8 +420,17 @@ export async function serviceMetrics(db: D1Database): Promise<Map<number, Servic
 			okRate: Number(row.okRate)
 		});
 	}
-	// completed days from aggregates, today's partial from raw checks
-	for (const row of [...dailyRes.results, ...todayRes.results]) {
+	// completed days from aggregates; raw fills only days the rollup hasn't
+	// covered yet (today, and yesterday before housekeeping runs)
+	const inDaily = new Set(dailyRes.results.map((r) => `${r.serviceId}:${r.day}`));
+	for (const row of dailyRes.results) {
+		const m = ensure(Number(row.serviceId));
+		const day = m.days.find((d) => d.day === row.day);
+		const checks = Number(row.checks);
+		if (day && checks > 0) day.pct = (100 * (checks - Number(row.failures))) / checks;
+	}
+	for (const row of todayRes.results) {
+		if (inDaily.has(`${row.serviceId}:${row.day}`)) continue;
 		const m = ensure(Number(row.serviceId));
 		const day = m.days.find((d) => d.day === row.day);
 		const checks = Number(row.checks);
@@ -425,14 +439,18 @@ export async function serviceMetrics(db: D1Database): Promise<Map<number, Servic
 	for (const row of uptime24hRes.results) {
 		ensure(Number(row.serviceId)).uptime24h = Number(row.pct);
 	}
-	// all-time = aggregates + today's raw
+	// all-time = daily + weekly aggregates, plus raw days not yet rolled up
 	const allTime = new Map<number, { checks: number; failures: number }>();
-	for (const row of [...allTimeRes.results, ...todayRes.results]) {
+	const addAllTime = (row: Record<string, number | string>) => {
 		const id = Number(row.serviceId);
 		const cur = allTime.get(id) ?? { checks: 0, failures: 0 };
 		cur.checks += Number(row.checks);
 		cur.failures += Number(row.failures);
 		allTime.set(id, cur);
+	};
+	for (const row of allTimeRes.results) addAllTime(row);
+	for (const row of todayRes.results) {
+		if (!inDaily.has(`${row.serviceId}:${row.day}`)) addAllTime(row);
 	}
 	for (const [id, { checks, failures }] of allTime) {
 		if (checks > 0) ensure(id).uptimeAll = (100 * (checks - failures)) / checks;

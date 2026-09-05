@@ -21,7 +21,7 @@ so database migrations run on every deploy (the build command is `npm run build`
 ## Features
 
 - Public status page: overall banner, per-service status, incident timelines, past incidents, recent-updates feed
-- **Live updates** — pages refresh instantly over WebSocket when anything changes (auto-reconnect, polling fallback)
+- **Live updates** — the public page is backed by TanStack Query: WebSocket pushes invalidate the query for instant refresh, with interval refetching as the fallback when the socket is down (auto-reconnect, refetch-on-focus)
 - **Uptime checks** — cron pings each service's monitor URL; two consecutive failures auto-set `major_outage` (with a public note), and a passing check auto-recovers it. Manual status changes are never overridden.
 - **Latency charts** — 24h latency graph (15-min buckets, failure markers) per monitored service
 - **90-day uptime bars** with daily percentages and 24h/90d uptime numbers
@@ -40,7 +40,7 @@ so database migrations run on every deploy (the build command is `npm run build`
 
 This is intended as "finished software": deploy once, use for years.
 
-- **Bounded data, forever.** A daily housekeeping cron (03:13 UTC) rolls raw uptime checks into `uptime_daily` aggregates (~365 tiny rows/service/year, kept forever — they power the 90-day bars and all-time uptime %), then prunes: raw checks after 7 days, public status events after 1 year, expired auth sessions/verifications, invitations 30 days past use/expiry, and unreferenced images. Incidents and their timelines are permanent — they grow by human action, not by the clock.
+- **Bounded data, forever.** A daily housekeeping cron (03:13 UTC) compresses uptime data through tiers, each an exact sum-based rollup of the one below: raw per-minute checks (7 days) → hourly (30 days) → daily (1 year) → weekly (kept forever, ~52 rows/service/year — the only tier that grows). The rollups are unbounded on the old side and prunes cut on whole-period boundaries, so nothing is ever lost even if the cron misses days. Also pruned: public status events after 1 year, expired auth sessions/verifications, invitations 30 days past use/expiry, and unreferenced images. Incidents and their timelines are permanent — they grow by human action, not by the clock.
 - **Subrequest-safe checks.** Health checks run in chunks of 5, so a long service list can't exhaust a Worker invocation's subrequest budget. (On the free plan's ~50-subrequest limit, keep monitored services under ~15; the paid plan's 1000 is a non-issue.)
 - **No external dependencies at runtime.** No email provider, no object storage, no third-party APIs — D1, a Durable Object, and cron triggers only. Nothing to renew, rotate, or migrate.
 
@@ -90,3 +90,7 @@ npm run deploy                         # build + remote migrations + deploy
 [wrangler.jsonc](wrangler.jsonc) intentionally contains no `database_id` — wrangler resolves the database by name in whichever account deploys it, so the same config works for every fork. Cron triggers and the Durable Object are created on first deploy. `BETTER_AUTH_SECRET` is optional (`npx wrangler secret put BETTER_AUTH_SECRET`); without it a random secret is generated and stored in the database on first request.
 
 Visit the deployed site once to run onboarding and claim the admin account — until then the site shows only the setup page, and sign-up stays invitation-only afterwards unless you open it.
+
+---
+
+*Entirely written by Claude Code (Fable 5).*

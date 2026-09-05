@@ -1,10 +1,22 @@
 <script lang="ts">
+	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
+	import { browser } from '$app/environment';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { authClient } from '$lib/auth-client';
 	import Visual from '$lib/components/Visual.svelte';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
+
+	const queryClient = new QueryClient({
+		defaultOptions: {
+			queries: {
+				// SSR provides initialData; only the browser refetches
+				enabled: browser,
+				staleTime: 5_000
+			}
+		}
+	});
 
 	async function signOut() {
 		await authClient.signOut();
@@ -23,6 +35,7 @@
 	<link rel="alternate" type="application/rss+xml" title="{data.site.title} incidents" href="/feed.xml" />
 </svelte:head>
 
+<QueryClientProvider client={queryClient}>
 <div class="shell">
 	<header>
 		<a class="brand" href="/">
@@ -52,6 +65,7 @@
 		Running on a Cloudflare Worker &middot; D1 &middot; better-auth &middot; SvelteKit
 	</footer>
 </div>
+</QueryClientProvider>
 
 <style>
 	:global(*) {

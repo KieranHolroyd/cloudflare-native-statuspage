@@ -1,9 +1,11 @@
 <script lang="ts">
+	import type { CellContext, ColumnDef } from '@tanstack/table-core';
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
 	import IconPicker from '$lib/components/IconPicker.svelte';
 	import Visual from '$lib/components/Visual.svelte';
-	import { fmtDateTime } from '$lib/format';
+	import { fmtDate as fmtDateShort, fmtDateTime } from '$lib/format';
+	import { createSvelteTable } from '$lib/table.svelte';
 	import {
 		IMPACT_LEVELS,
 		INCIDENT_SEVERITIES,
@@ -39,6 +41,26 @@
 
 	function fmtDate(iso: string) {
 		return new Date(iso).toLocaleDateString();
+	}
+
+	type Member = (typeof data.users)[number];
+	const memberColumns: ColumnDef<Member>[] = [
+		{ accessorKey: 'name', header: 'Name' },
+		{ accessorKey: 'email', header: 'Email' },
+		{
+			accessorKey: 'createdAt',
+			header: 'Joined',
+			cell: (info: CellContext<Member, unknown>) => fmtDateShort(String(info.getValue()))
+		}
+	];
+	const members = createSvelteTable(() => ({ data: data.users, columns: memberColumns }));
+
+	function renderCell(cell: { getValue: () => unknown; getContext: () => unknown; column: { columnDef: ColumnDef<Member> } }): string {
+		const def = cell.column.columnDef.cell;
+		if (typeof def === 'function') {
+			return String(def(cell.getContext() as CellContext<Member, unknown>));
+		}
+		return String(cell.getValue() ?? '');
 	}
 </script>
 
@@ -440,23 +462,46 @@
 
 <section class="card new">
 	<h2>Members</h2>
-	<ul class="members">
-		{#each data.users as member (member.id)}
-			<li>
-				<strong>{member.name}</strong>
-				<span>{member.email}</span>
-				<time>joined {fmtDate(member.createdAt)}</time>
-			</li>
-		{/each}
-	</ul>
+	<table class="members-table">
+		<thead>
+			{#each members.table.getHeaderGroups() as headerGroup (headerGroup.id)}
+				<tr>
+					{#each headerGroup.headers as header (header.id)}
+						<th>
+							<button
+								type="button"
+								class="th-sort"
+								onclick={(e) => header.column.getToggleSortingHandler()?.(e)}
+							>
+								{header.column.columnDef.header}
+								{header.column.getIsSorted() === 'asc'
+									? '↑'
+									: header.column.getIsSorted() === 'desc'
+										? '↓'
+										: ''}
+							</button>
+						</th>
+					{/each}
+				</tr>
+			{/each}
+		</thead>
+		<tbody>
+			{#each members.table.getRowModel().rows as row (row.id)}
+				<tr>
+					{#each row.getVisibleCells() as cell (cell.id)}
+						<td>{renderCell(cell)}</td>
+					{/each}
+				</tr>
+			{/each}
+		</tbody>
+	</table>
 </section>
 
 <style>
 	h1 {
 		font-size: 1.4rem;
 	}
-	.invites,
-	.members {
+	.invites {
 		list-style: none;
 		margin: 1rem 0 0;
 		padding: 0;
@@ -496,19 +541,32 @@
 		color: #22c55e;
 		font-size: 0.78rem;
 	}
-	.members li {
-		display: flex;
-		gap: 0.7rem;
-		align-items: baseline;
-		flex-wrap: wrap;
+	.members-table {
+		width: 100%;
+		border-collapse: collapse;
+		margin-top: 0.8rem;
 		font-size: 0.88rem;
 	}
-	.members span {
-		color: #94a3b8;
+	.members-table th {
+		text-align: left;
+		border-bottom: 1px solid #2a3550;
+		padding: 0.3rem 0.6rem 0.3rem 0;
 	}
-	.members time {
-		color: #64748b;
-		font-size: 0.78rem;
+	.th-sort {
+		background: none;
+		color: #94a3b8;
+		padding: 0;
+		font-weight: 600;
+		font-size: 0.8rem;
+	}
+	.th-sort:hover {
+		background: none;
+		color: #e5e9f0;
+	}
+	.members-table td {
+		padding: 0.45rem 0.6rem 0.45rem 0;
+		border-bottom: 1px solid #16203a;
+		color: #cbd5e1;
 	}
 	h1.section {
 		margin-top: 2.2rem;

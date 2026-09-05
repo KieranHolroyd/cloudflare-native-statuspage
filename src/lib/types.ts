@@ -70,6 +70,14 @@ export interface DayUptime {
 	pct: number | null; // null = no data
 }
 
+/** Full public status page payload (SSR initial data + /api/overview). */
+export interface Overview {
+	services: Service[];
+	events: StatusEvent[];
+	incidents: { active: Incident[]; upcoming: Incident[]; resolved: Incident[] };
+	metrics: Record<string, ServiceMetrics>;
+}
+
 export interface ServiceMetrics {
 	uptime24h: number | null;
 	/** All-time uptime %, from daily aggregates (kept forever). */
