@@ -1,0 +1,51 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "cloudflare-native-statuspage",
+	// Custom entry that wraps the SvelteKit worker with /ws + cron + Durable Object.
+	// Requires `npm run build` first so .svelte-kit/cloudflare/_worker.js exists.
+	"main": "src/worker.ts",
+	"compatibility_date": "2026-09-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "STATUS_CHANNEL",
+				"class_name": "StatusChannel"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"StatusChannel"
+			]
+		}
+	],
+	"triggers": {
+		// every minute: uptime checks + maintenance transitions
+		// daily 03:13 UTC: housekeeping (rollups + retention pruning)
+		"crons": [
+			"* * * * *",
+			"13 3 * * *"
+		]
+	},
+	"observability": {
+		"enabled": true
+	},
+	"d1_databases": [
+		{
+			// No database_id on purpose: wrangler resolves (or provisions) the
+			// database by name in whichever account deploys this. Nothing
+			// account-specific lives in this file.
+			"binding": "DB",
+			"database_name": "statuspage-db"
+		}
+	]
+}

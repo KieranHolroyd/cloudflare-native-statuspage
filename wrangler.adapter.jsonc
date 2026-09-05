@@ -1,0 +1,23 @@
+{
+	// Config used ONLY by @sveltejs/adapter-cloudflare (see vite.config.ts).
+	// The adapter emits its generated worker to `main`, so this keeps it away
+	// from src/worker.ts (the real entry, configured in wrangler.jsonc).
+	// It is also used to emulate bindings during `vite dev` — keep the D1
+	// binding in sync with wrangler.jsonc.
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "cloudflare-native-statuspage",
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"compatibility_date": "2026-09-01",
+	"compatibility_flags": ["nodejs_compat"],
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "statuspage-db",
+			"migrations_dir": "migrations"
+		}
+	]
+}
